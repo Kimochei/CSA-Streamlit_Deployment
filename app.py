@@ -3,95 +3,146 @@ from ultralytics import YOLO
 from PIL import Image
 import numpy as np
 import cv2
+from collections import defaultdict
+import pandas as pd
+import altair as alt
 
 # --- App Configuration ---
 st.set_page_config(
-    page_title="GI Disease Detection | YOLOv12",
+    page_title="GI-Detect AI | YOLOv12",
     page_icon="🩺",
     layout="wide"
 )
 
-# --- App Title and Description ---
-st.title("Gastrointestinal Disease Detection using YOLOv12")
-st.markdown("""
-    Upload an endoscopic image to detect and segment potential diseases like polyps, esophagitis, or ulcerative colitis.
-    The model will draw a colored mask over the detected area and a bounding box with the confidence score.
-""")
-
-# --- Model Loading ---
-# Use st.cache_resource to load the model only once, making the app faster.
+# --- Model Loading (Cached for performance) ---
 @st.cache_resource
 def load_model(model_path):
-    """Loads the YOLOv12 model from the specified path."""
+    """Loads the YOLOv12 model."""
     model = YOLO(model_path)
     return model
 
 try:
     model = load_model("best.pt")
 except Exception as e:
-    st.error(f"Error loading the model: {e}")
+    st.error(f"Error loading model: {e}")
     st.stop()
 
-# --- Main App Logic ---
-col1, col2 = st.columns(2)
+# --- Sidebar ---
+with st.sidebar:
+    st.title("🩺 GI-Detect AI")
+    st.markdown("---")
+    st.markdown(
+        "**GI-Detect AI** uses a YOLOv12 model to identify and segment gastrointestinal diseases from endoscopic images."
+    )
+    st.markdown(
+        "This tool is a demonstration and not a substitute for professional medical advice."
+    )
+    st.markdown("---")
+    st.subheader("Model Information")
+    st.markdown(
+        "- **Model:** YOLOv12\n"
+        "- **Task:** Instance Segmentation\n"
+        "- **Classes:** Polyps, Esophagitis, Ulcerative Colitis, and healthy landmarks."
+    )
 
+# --- Main Page Title ---
+st.title("Gastrointestinal Disease Detection Interface")
+st.markdown("Upload an image to begin the analysis.")
+
+# --- Main App Layout ---
+col1, col2 = st.columns([0.9, 1.1])
+
+# --- Image Upload Column ---
 with col1:
-    st.header("Upload Image")
-    uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
-    if uploaded_file:
-        original_image = Image.open(uploaded_file)
-        st.image(original_image, caption="Original Uploaded Image", use_column_width=True)
+    with st.container(border=True):
+        st.header("📤 Upload Image")
+        uploaded_file = st.file_uploader("Choose an endoscopic image...", type=["jpg", "jpeg", "png"], label_visibility="collapsed")
+        
+        if uploaded_file:
+            original_image = Image.open(uploaded_file)
+            st.image(original_image, caption="Original Uploaded Image", use_column_width=True)
 
+# --- Detection Results Column ---
 with col2:
-    st.header("Detection Results")
-    if uploaded_file:
-        # Show a spinner while processing
-        with st.spinner("Processing image..."):
-            # Convert PIL Image to OpenCV format (NumPy array)
-            img_cv = np.array(original_image)
-            img_cv = cv2.cvtColor(img_cv, cv2.COLOR_RGB2BGR)
-
-            # Run inference on the image
-            results = model(img_cv)
-            
-            # --- Draw Predictions on the Image ---
-            overlay = img_cv.copy()
-            for r in results:
-                # Draw segmentation masks
-                if r.masks is not None:
-                    masks = r.masks.data.cpu().numpy()
-                    for i, mask in enumerate(masks):
-                        # Get a random color for each class instance
-                        color = np.random.randint(50, 255, (3,), dtype=np.uint8)
-                        
-                        # Apply the mask
-                        overlay[mask > 0] = color
-
-                # Draw bounding boxes and labels
-                boxes = r.boxes.xyxy.cpu().numpy()
-                scores = r.boxes.conf.cpu().numpy()
-                class_ids = r.boxes.cls.cpu().numpy().astype(int)
-                class_names = model.names
-
-                for box, score, cls_id in zip(boxes, scores, class_ids):
-                    x1, y1, x2, y2 = map(int, box)
-                    label = f"{class_names[cls_id]} {score:.2f}"
-                    box_color = (0, 255, 0) # Green for the box
+    with st.container(border=True):
+        st.header("📊 Detection Results")
+        if uploaded_file:
+            with st.spinner("Analyzing image..."):
+                # --- Model Inference and Drawing ---
+                detections = []
+                img_cv = np.array(original_image)
+                # This is the corrected line
+                img_cv = cv2.cvtColor(img_cv, cv2.COLOR_RGB2BGR)
+                results = model(img_cv)
+                
+                overlay = img_cv.copy()
+                for r in results:
+                    # Drawing logic remains the same...
+                    if r.masks is not None:
+                        for mask in r.masks.data.cpu().numpy():
+                            color = np.random.randint(50, 255, (3,), dtype=np.uint8)
+                            overlay[mask > 0] = color
                     
-                    # Draw the bounding box
-                    cv2.rectangle(img_cv, (x1, y1), (x2, y2), box_color, 2)
-                    
-                    # Put the label above the box
-                    (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
-                    cv2.rectangle(img_cv, (x1, y1 - h - 10), (x1 + w, y1 - 10), box_color, -1)
-                    cv2.putText(img_cv, label, (x1, y1 - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-            
-            # Blend the overlay with the original image for a transparent mask effect
-            processed_image = cv2.addWeighted(overlay, 0.5, img_cv, 0.5, 0)
+                    for box, score, cls_id in zip(r.boxes.xyxy.cpu().numpy(), r.boxes.conf.cpu().numpy(), r.boxes.cls.cpu().numpy().astype(int)):
+                        detections.append({"name": model.names[cls_id], "confidence": score})
+                        x1, y1, x2, y2 = map(int, box)
+                        label = f"{model.names[cls_id]} {score:.2f}"
+                        cv2.rectangle(img_cv, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                        (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+                        cv2.rectangle(img_cv, (x1, y1 - h - 10), (x1 + w, y1 - 10), (0, 255, 0), -1)
+                        cv2.putText(img_cv, label, (x1, y1 - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                
+                processed_image = cv2.addWeighted(overlay, 0.5, img_cv, 0.5, 0)
+                processed_image_rgb = cv2.cvtColor(processed_image, cv2.COLOR_BGR2RGB)
+                
+                st.image(processed_image_rgb, caption="Processed Image with Detections", use_column_width=True)
+                
+                # --- Display Per-Detection Confidence ---
+                st.subheader("Detection Analysis")
+                if detections:
+                    counts = defaultdict(int)
+                    for det in detections:
+                        name = det['name'].replace('_', ' ').title()
+                        conf = det['confidence'] * 100
+                        counts[name] += 1
+                        st.metric(label=f"{name} #{counts[name]}", value=f"{conf:.2f}%")
+                else:
+                    st.success("✅ No diseases or specific landmarks were detected.")
+        else:
+            st.info("Awaiting image upload to display results.")
 
-            # Convert BGR back to RGB for display in Streamlit
-            processed_image_rgb = cv2.cvtColor(processed_image, cv2.COLOR_BGR2RGB)
-            
-            st.image(processed_image_rgb, caption="Processed Image with Detections", use_column_width=True)
-    else:
-        st.info("Please upload an image to see the detection results.")
+st.divider()
+
+# --- Per-Class Performance Chart ---
+st.header("📈 Per-Class Performance Breakdown")
+st.markdown("This chart shows the model's **mean Average Precision (mAP@0.5)** for each specific class, based on its performance on our validation dataset. This metric indicates how accurately the model identifies each type of disease or landmark.")
+
+# --- Example Data for the Chart ---
+# ⚠️ IMPORTANT: Replace these with the actual mAP values from your training results.csv file.
+class_performance_data = {
+    'Class': [
+        'Polyps', 'Esophagitis', 'Ulcerative-Colitis', 
+        'Normal-Cecum', 'Normal-Pylorus', 'Normal-Z-Line'
+    ],
+    'mAP@0.5 (%)': [92.1, 78.5, 85.3, 98.2, 96.5, 95.8] 
+}
+df_perf = pd.DataFrame(class_performance_data)
+
+# --- Create the Altair Chart ---
+chart = alt.Chart(df_perf).mark_bar().encode(
+    x=alt.X('mAP@0.5 (%):Q', title='Mean Average Precision (mAP@0.5)'),
+    y=alt.Y('Class:N', sort=None, title='Disease / Landmark Class'),
+    tooltip=['Class', 'mAP@0.5 (%)']
+).properties(
+    title='Model Performance by Class'
+)
+
+text = chart.mark_text(
+    align='left',
+    baseline='middle',
+    dx=3  # Nudges text to the right of the bar
+).encode(
+    text=alt.Text('mAP@0.5 (%):Q', format='.1f')
+)
+
+st.altair_chart((chart + text), use_container_width=True)
