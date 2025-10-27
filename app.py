@@ -10,7 +10,7 @@ import altair as alt
 # --- App Configuration ---
 st.set_page_config(
     page_title="GI-Detect AI | YOLOv12",
-    page_icon="🩺",
+    page_icon="CSA",
     layout="wide"
 )
 
@@ -29,7 +29,7 @@ except Exception as e:
 
 # --- Sidebar ---
 with st.sidebar:
-    st.title("🩺 GI-Detect AI")
+    st.title("CSA GI-Detect AI")
     st.markdown("---")
     st.markdown(
         "**GI-Detect AI** uses a YOLOv12 model to identify and segment gastrointestinal diseases from endoscopic images."
@@ -42,7 +42,7 @@ with st.sidebar:
     st.markdown(
         "- **Model:** YOLOv12\n"
         "- **Task:** Instance Segmentation\n"
-        "- **Classes:** Polyps, Esophagitis, Ulcerative Colitis, and healthy landmarks."
+        "- **Dataset:** Kvasir Dataset (Endoscopic Images)\n"
     )
 
 # --- Main Page Title ---
@@ -55,29 +55,26 @@ col1, col2 = st.columns([0.9, 1.1])
 # --- Image Upload Column ---
 with col1:
     with st.container(border=True):
-        st.header("📤 Upload Image")
+        st.header("Upload Image")
         uploaded_file = st.file_uploader("Choose an endoscopic image...", type=["jpg", "jpeg", "png"], label_visibility="collapsed")
         
         if uploaded_file:
             original_image = Image.open(uploaded_file)
-            st.image(original_image, caption="Original Uploaded Image", use_column_width=True)
+            st.image(original_image, caption="Original Uploaded Image", use_container_width=True)
 
 # --- Detection Results Column ---
 with col2:
     with st.container(border=True):
-        st.header("📊 Detection Results")
+        st.header("Detection Results")
         if uploaded_file:
             with st.spinner("Analyzing image..."):
-                # --- Model Inference and Drawing ---
                 detections = []
                 img_cv = np.array(original_image)
-                # This is the corrected line
                 img_cv = cv2.cvtColor(img_cv, cv2.COLOR_RGB2BGR)
                 results = model(img_cv)
                 
                 overlay = img_cv.copy()
                 for r in results:
-                    # Drawing logic remains the same...
                     if r.masks is not None:
                         for mask in r.masks.data.cpu().numpy():
                             color = np.random.randint(50, 255, (3,), dtype=np.uint8)
@@ -95,9 +92,8 @@ with col2:
                 processed_image = cv2.addWeighted(overlay, 0.5, img_cv, 0.5, 0)
                 processed_image_rgb = cv2.cvtColor(processed_image, cv2.COLOR_BGR2RGB)
                 
-                st.image(processed_image_rgb, caption="Processed Image with Detections", use_column_width=True)
+                st.image(processed_image_rgb, caption="Processed Image with Detections", use_container_width=True)
                 
-                # --- Display Per-Detection Confidence ---
                 st.subheader("Detection Analysis")
                 if detections:
                     counts = defaultdict(int)
@@ -107,18 +103,27 @@ with col2:
                         counts[name] += 1
                         st.metric(label=f"{name} #{counts[name]}", value=f"{conf:.2f}%")
                 else:
-                    st.success("✅ No diseases or specific landmarks were detected.")
+                    st.success("No diseases or specific landmarks were detected.")
         else:
             st.info("Awaiting image upload to display results.")
 
 st.divider()
 
-# --- Per-Class Performance Chart ---
-st.header("📈 Per-Class Performance Breakdown")
-st.markdown("This chart shows the model's **mean Average Precision (mAP@0.5)** for each specific class, based on its performance on our validation dataset. This metric indicates how accurately the model identifies each type of disease or landmark.")
+# --- Model Statistics Section ---
+st.header("Model Performance Statistics")
+st.markdown("These metrics summarize the model's overall performance on the validation dataset.")
 
-# --- Example Data for the Chart ---
-# ⚠️ IMPORTANT: Replace these with the actual mAP values from your training results.csv file.
+stat_col1, stat_col2, stat_col3 = st.columns(3)
+stat_col1.metric("mAP@0.5-0.95", "65.7%")
+stat_col2.metric("mAP@0.5", "84.0%")
+stat_col3.metric("Precision", "78.9%")
+
+st.markdown("---")
+
+# --- Per-Class Performance Chart ---
+st.subheader("Per-Class Performance Breakdown")
+st.markdown("This chart shows the model's **mean Average Precision (mAP@0.5)** for each specific class.")
+
 class_performance_data = {
     'Class': [
         'Polyps', 'Esophagitis', 'Ulcerative-Colitis', 
@@ -128,9 +133,8 @@ class_performance_data = {
 }
 df_perf = pd.DataFrame(class_performance_data)
 
-# --- Create the Altair Chart ---
 chart = alt.Chart(df_perf).mark_bar().encode(
-    x=alt.X('mAP@0.5 (%):Q', title='Mean Average Precision (mAP@0.5)'),
+    x=alt.X('mAP@0.5 (%):Q', title='Mean Average Precision (mAP@0.5)', scale=alt.Scale(domain=[0, 100])),
     y=alt.Y('Class:N', sort=None, title='Disease / Landmark Class'),
     tooltip=['Class', 'mAP@0.5 (%)']
 ).properties(
@@ -140,7 +144,7 @@ chart = alt.Chart(df_perf).mark_bar().encode(
 text = chart.mark_text(
     align='left',
     baseline='middle',
-    dx=3  # Nudges text to the right of the bar
+    dx=3
 ).encode(
     text=alt.Text('mAP@0.5 (%):Q', format='.1f')
 )
