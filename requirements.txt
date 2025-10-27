@@ -1,5 +1,8 @@
+# New requirements.txt
 streamlit==1.35.0
-ultralytics
+ultralytics==8.2.0  # Try a specific, recent version
+torch
+torchvision
 opencv-python-headless
 Pillow
 numpy
