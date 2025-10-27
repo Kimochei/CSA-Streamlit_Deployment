@@ -1,11 +1,9 @@
-# New requirements.txt
-streamlit==1.35.0
-ultralytics==8.2.0  # Try a specific, recent version
-torch
-torchvision
-opencv-python-headless
+streamlit
+ultralytics==8.2.0
+torch==2.0.1 
+torchvision==0.15.2
 Pillow
 numpy
-pandas==2.2.2
-altair==5.3.0
-protobuf==3.20.3
+opencv-python
+pandas
+altair
